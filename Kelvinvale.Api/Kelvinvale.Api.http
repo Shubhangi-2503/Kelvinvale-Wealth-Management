@@ -1,0 +1,6 @@
+@Kelvinvale.Api_HostAddress = http://localhost:5263
+
+GET {{Kelvinvale.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

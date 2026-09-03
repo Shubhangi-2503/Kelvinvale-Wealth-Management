@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="Kelvinvale.Api/Kelvinvale.Api.csproj" />
+  <Project Path="Kelvinvale.Application/Kelvinvale.Application.csproj" />
+  <Project Path="Kelvinvale.Domain/Kelvinvale.Domain.csproj" />
+  <Project Path="Kelvinvale.Infrastructure/Kelvinvale.Infrastructure.csproj" />
+  <Project Path="Kelvinvale.Test/Kelvinvale.Test.csproj" Id="2064a9a8-70fc-4951-a2e6-b964c8fdcef0" />
+</Solution>
