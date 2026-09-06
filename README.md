@@ -1,6 +1,6 @@
 # Kelvinvale Wealth Management API
 
-A production-grade .NET 10 Web API built to manage UK investment wrappers (ISA, GIA, SIPP), dual-audience authorisation, statutory compliance validation, and auditable financial workflows.
+A .NET 10 Web API for managing UK investment wrappers (ISA, GIA, SIPP), dual-audience authorisation, statutory compliance validation, and auditable financial workflows.
 
 ---
 
@@ -15,7 +15,7 @@ A production-grade .NET 10 Web API built to manage UK investment wrappers (ISA, 
 
 Clone or download this repository to your local machine:
    ```bash
-   git clone [https://github.com/your-org/kelvinvale-api.git](https://github.com/your-org/kelvinvale-api.git)
+   git clone [https://github.com/Shubhangi-2503/Kelvinvale-Wealth-Management.git](https://github.com/Shubhangi-2503/Kelvinvale-Wealth-Management.git)
    cd kelvinvale-api
 ```
 ### Run with .NET CLI
@@ -108,7 +108,7 @@ We implemented a dynamic, two-tier security pipeline combining database-backed *
 * **Per-Request Role Resolution**: Resolved roles directly from the database per request because enforcing immediate deactivation for revoked accounts outweighed query latency.  
   * *Roadmap:* Pair short-lived JWTs with an event-driven, low-latency Redis cache.
 * **Two-Tier Enforcement**: Combined perimeter `[Authorize]` RBAC with repository-level ReBAC queries because route attributes cannot prevent horizontal data leaks between customers or advisers.  
-  * *Roadmap:* Decouple relationship checks into a dedicated fine-grained authorization engine (e.g., OpenFGA).
+  * *Roadmap:* Decouple relationship checks into a dedicated fine-grained authorisation engine (e.g., OpenFGA).
 * **Dynamic Adviser Book Scoping**: Evaluated `dbo.CustomerAdvisors` dynamically on every query because caching or claim-embedding client IDs causes stale access when books transfer.  
   * *Roadmap:* Retain dynamic database joins while optimising query performance using composite indexes.
 *  **Production Identity Transition**: Used a lightweight custom header handler to keep evaluation self-contained without external dependencies.  
@@ -123,8 +123,8 @@ Because Kelvinvale operates in wealth management under FCA regulatory compliance
 
 ## 2(a). What to Tackle Next Given Another Day
 
-* **Global Exception Handler**: Implement a centralized custom exception middleware to intercept unhandled domain and validation errors, ensuring uniform RFC 7807 ProblemDetails responses without leaking internal stack traces.
-* **FluentValidation Pipeline**: Integrate a FluentValidation pipeline behavior to execute input validation before controller execution, keeping endpoints lean and guaranteeing only valid payloads reach business logic.
+* **Global Exception Handler**: Implement a centralised custom exception middleware to intercept unhandled domain and validation errors, ensuring uniform RFC 7807 ProblemDetails responses without leaking internal stack traces.
+* **FluentValidation Pipeline**: Integrate a FluentValidation pipeline behaviour to execute input validation before controller execution, keeping endpoints lean and guaranteeing only valid payloads reach business logic.
 *  **Pagination on Customer Retrieval**: Introduce cursor- or offset-based pagination on `GET /customers` to restrict unbounded query result sets and protect memory usage as the user base expands.
 *  **EF Core Global Query Filters**: Configure global query filters on all soft-deletable entities (`WHERE IsActive = 1`) to eliminate repetitive manual filters and prevent accidental exposure of deactivated records.
 *  **Application Insights Telemetry**: Add Azure Application Insights with structured telemetry to correlate distributed traces, monitor SQL execution times, and quickly diagnose production failures.
@@ -135,7 +135,7 @@ Because Kelvinvale operates in wealth management under FCA regulatory compliance
 * **High-Throughput Stored Procedures**: Transition critical high-volume writes and complex reporting aggregates into compiled SQL Stored Procedures to bypass ORM mapping overhead, achieving maximum execution performance for heavy data operations while preserving a clean, unified data access layer in C#.
 * **Dedicated Self-Hosted Identity Provider**: Replace custom header-based identity simulation with an isolated Duende IdentityServer on .NET, implementing OAuth 2.0 PKCE, WebAuthn MFA, and RS256-signed JWTs.
 * **Asynchronous Event-Driven Notifications**: Decouple client communications (confirmations, allowance alerts) from the synchronous HTTP request path using Azure Service Bus and Logic Apps to reduce user-facing latency.
-* **Payment Gateway & Open Banking Integration**: Implement Open Banking Payment Initiation Services (PIS) with HMAC-SHA256 verified webhooks to enable real-time account funding and instant settlement transitions.
+* **Payment Gateway & Open Banking Integration**: Implement Open Banking Payment Initiation Services (PIS) with HMAC-SHA256-verified webhooks to enable real-time account funding and instant settlement transitions.
 * **Power BI Investment Intelligence**: Expose an aggregate read-only data model to Microsoft Power BI via DirectQuery to provide clients and advisers with predictive compounding projections and tax-relief forecasting.
 ---
 
@@ -177,22 +177,21 @@ In line with professional delivery standards, AI tools were leveraged as force m
 
 ### Tools & Scope of Use
 * **Google Gemini**: Primary accelerator for DTO contracts, EF Core mapping boilerplate, integration test scaffolding, and initial documentation drafting.
-* **NotebookLM**: Architectural research assistant for analyzing RFC 7807 specifications, claims transformation patterns, and REST best practices.
-* **Claude (Free Tier)**: Second-opinion codebase auditor to identify gaps, architectural risks, and missing patterns (e.g., highlighting the need for a centralized global exception handler). *(Note: Utilized within free-tier limits despite a strong preference for Claude's analytical precision).*
+* **NotebookLM**: Architectural research assistant for analysing RFC 7807 specifications, claims transformation patterns, and REST best practices.
+* **Claude (Free Tier)**: Second-opinion codebase auditor to identify gaps, architectural risks, and missing patterns (e.g., highlighting the need for a centralised global exception handler). *(Note: Utilised within free-tier limits despite a strong preference for Claude's analytical precision.*
 
 ###  Accelerated Workflows
 * **Instruction-Driven Implementation**: Rapidly scaffolded and implemented baseline code structures strictly following detailed prompt specifications and architectural constraints.
 * **Boilerplate & Contracts**: Generated repetitive request/response DTOs, entity configurations, and baseline FluentValidation skeletons.
-* **Test Matrix Scaffolding**: Accelerated boilerplate setup for parameterized integration test fixtures covering Admin, Adviser, and Customer role permutations.
+* **Test Matrix Scaffolding**: Accelerated boilerplate setup for parameterised integration test fixtures covering Admin, Adviser, and Customer role permutations.
 * **Documentation Layout**: Structured architectural sections and operational roadmaps into scannable formats.
 
 ### Engineering Overrides, Corrections & Friction Points
 * **Security Enforcement**: Rejected AI-proposed client headers (`X-Caller-Role`); replaced with server-side database role resolution from `X-Caller-Id` to prevent privilege escalation.
-* **Financial Precision**: Overrode suggested decimal/floating-point types in favor of discrete integer pence (`long AmountPence`) to eliminate rounding drift per UK accounting practices.
-* **Test Architecture**: Discarded shallow `Moq` unit test setups in favor of EF Core in-memory providers to test genuine LINQ execution and ReBAC filters.
+* **Financial Precision**: Overrode suggested decimal/floating-point types in favour of discrete integer pence (`long AmountPence`) to eliminate rounding drift per UK accounting practices.
+* **Test Architecture**: Discarded shallow `Moq` unit test setups in favour of EF Core in-memory providers to test genuine LINQ execution and ReBAC filters.
 * **Context Drops & Omissions**: Corrected instances where AI lost conversational context, omitted specified edge-case scenarios, or lost track of pre-existing code.
 * **Code Hygiene**: Audited and removed generated dead code, redundant variables, and unsolicited comments.
-* **Markdown Citation Artifacts**: Cleaned up repetitive AI hallucination artifacts (e.g., ``) where models failed to follow negative prompting constraints.
 
 ### Verification & Ownership
-Every line of code and test assertion was manually reviewed, compiled under strict zero-warning policy (`/warnaserror`), and validated against an 85%+ branch coverage gate to ensure domain correctness and FCA compliance.
+Every line of code and test assertion was manually reviewed, compiled under a strict zero-warning policy (`/warnaserror`), and validated against an 85%+ branch coverage gate to ensure domain correctness and FCA compliance.
