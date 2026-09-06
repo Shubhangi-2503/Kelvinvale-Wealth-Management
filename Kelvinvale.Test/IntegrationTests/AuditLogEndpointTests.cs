@@ -30,7 +30,7 @@ public class AuditLogEndpointTests
     [Test]
     public async Task InstructionsEndpoint_WhenCalled_GeneratesExpectedAuditRecord()
     {
-        // 📋 1. Arrange: Prepare a request for InstructionsController
+        // 1. Arrange: Prepare a request for InstructionsController
         var productId = CustomWebApplicationFactory.AliceIsaProductId;
         var callerId = CustomWebApplicationFactory.CustomerAliceId;
 

@@ -15,12 +15,12 @@ namespace Kelvinvale.Api.Controllers
         [Authorize]
         public class InstructionsController : ControllerBase
         {
-        long IsaAnnualAllowancePence = DomainConstants.IsaAnnualAllowancePence;
-        int SippMinimumPensionAge = DomainConstants.SippMinimumPensionAge;
         private readonly IInstructionRepository _instructionRepo;
         private readonly ILogger<InstructionsController> _logger;
         private readonly ICustomerRepository _customerRepo;
         private readonly IIsaSubscriptionAllowanceRule _isaAllowanceRule;
+        int SippMinimumPensionAge = DomainConstants.SippMinimumPensionAge;
+
 
         public InstructionsController(
                 IInstructionRepository instructionRepo,

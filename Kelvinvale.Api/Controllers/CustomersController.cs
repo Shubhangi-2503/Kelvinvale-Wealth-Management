@@ -204,8 +204,9 @@ public class CustomersController : ControllerBase
         }
 
         var responseDto = await _customerRepo.GetCustomerDetailByIdAsync(customerId);
+        _logger.LogInformation("Customer {CustomerId} created by adviser {AdviserId} with {ProductCount} products", customerId, adviserId, productsToCreate.Count);
+
         return CreatedAtAction(nameof(GetCustomerById), new { customerId = customer.Id }, responseDto);
-        _logger.LogInformation( "Customer {CustomerId} created by adviser {AdviserId} with {ProductCount} products",customerId, adviserId, productsToCreate.Count);
     }
 
     [HttpPut("{customerId:guid}")]
@@ -261,9 +262,10 @@ public class CustomersController : ControllerBase
             });
         }
 
+        _logger.LogInformation("Profile updated for customer {CustomerId} by user {CallerId}", customerId, callerId);
         var updatedDetails = await _customerRepo.GetCustomerDetailByIdAsync(customerId);
         return Ok(updatedDetails);
-        _logger.LogInformation("Profile updated for customer {CustomerId} by user {CallerId}", customerId, callerId);
+        
     }
 
     private Guid GetCurrentUserId() =>
