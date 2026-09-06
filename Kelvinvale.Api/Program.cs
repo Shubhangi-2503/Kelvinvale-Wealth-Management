@@ -39,15 +39,7 @@ builder.Services.AddDbContext<KelvinvaleDbContext>(options =>
     }
     else
     {
-        options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"),
-            sqlOptions =>
-        {
-            sqlOptions.CommandTimeout(500); // Set default query timeout to 60s
-            sqlOptions.EnableRetryOnFailure(
-                maxRetryCount: 3,
-                maxRetryDelay: TimeSpan.FromSeconds(100),
-                errorNumbersToAdd: null);
-        });
+        options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
     }
 });
 
