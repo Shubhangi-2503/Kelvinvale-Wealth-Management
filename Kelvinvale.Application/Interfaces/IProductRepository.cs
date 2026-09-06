@@ -8,7 +8,7 @@ namespace Kelvinvale.Application.Interfaces
 {
     public interface IProductRepository
     {
-        Task<bool> HasActiveProductOfTypeInTaxYearAsync(Guid customerId, string productTypeCode, int taxYear, CancellationToken ct = default);
+        Task<bool> HasActiveProductOfTypeInTaxYearAsync(Guid customerId, string productTypeCode, int taxYear);
 
         // existing methods...
         Task<IEnumerable<ProductDetailDto>> GetProductsByCustomerIdAsync(Guid customerId);

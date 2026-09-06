@@ -43,7 +43,9 @@ namespace Kelvinvale.Api.Filters
             stopwatch.Stop();
 
             var httpContext = context.HttpContext;
-            var statusCode = httpContext.Response.StatusCode;
+            var statusCode = (executedContext.Result as ObjectResult)?.StatusCode
+                             ?? (executedContext.Result as StatusCodeResult)?.StatusCode
+                             ?? httpContext.Response.StatusCode;
 
             // 4. Resolve customer ID if available from route parameters
             Guid? customerId = null;

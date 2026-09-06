@@ -5,16 +5,19 @@ using Kelvinvale.Domain.Entities;
 using Kelvinvale.Infrastructure.Data;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Kelvinvale.Infrastructure.Repositories;
 
 public class CustomerRepository : ICustomerRepository
 {
     private readonly KelvinvaleDbContext _context;
+    private readonly ILogger<CustomerRepository> _logger;
 
-    public CustomerRepository(KelvinvaleDbContext context)
+    public CustomerRepository(KelvinvaleDbContext context, ILogger<CustomerRepository> logger)
     {
         _context = context;
+        _logger = logger;
     }
 
     public async Task<IEnumerable<CustomerDetailDto>> GetAssignedCustomersWithDetailsAsync(Guid adviserId)
@@ -28,6 +31,7 @@ public class CustomerRepository : ICustomerRepository
 
         if (customerIds.Count == 0)
         {
+            _logger.LogWarning("No assigned customers found.");
             return Enumerable.Empty<CustomerDetailDto>();
         }
 
@@ -55,6 +59,7 @@ public class CustomerRepository : ICustomerRepository
             .OrderByDescending(i => i.CreatedOn)
             .ToListAsync();
 
+        _logger.LogInformation("Retrieved {Count} assigned customers for adviser {AdviserId}", users.Count, adviserId);
         // 3. In-memory assembly (0 extra database queries)
         return users.Select(user => MapToDto(user, products, instructions)).ToList();
     }
@@ -90,6 +95,7 @@ public class CustomerRepository : ICustomerRepository
 
     public async Task<User?> GetByIdAsync(Guid customerId)
     {
+        _logger.LogInformation("Fetching customer with ID {CustomerId}", customerId);
         return await _context.Users
             .FirstOrDefaultAsync(u => u.Id == customerId && u.IsActive);
     }
@@ -99,42 +105,29 @@ public class CustomerRepository : ICustomerRepository
         var role = await _context.Roles
             .AsNoTracking()
             .FirstOrDefaultAsync(r => r.Name == "Customer");
-
+        _logger.LogInformation("Fetched Customer role ID: {RoleId}", role?.Id);
         return role?.Id;
     }
 
     public async Task<bool> IsCustomerAssignedToAdviserAsync(Guid customerId, Guid adviserId)
     {
+        _logger.LogInformation("Checking if customer {CustomerId} is assigned to adviser {AdviserId}", customerId, adviserId);
         return await _context.CustomerAdvisors
             .AsNoTracking()
             .AnyAsync(ca => ca.CustomerId == customerId && ca.AdviserId == adviserId && ca.IsActive);
     }
 
-    public async Task CreateCustomerWithAdviserAsync(User customer, Guid adviserId)
-    {
-        var relationship = new CustomerAdvisor
-        {
-            Id = Guid.NewGuid(),
-            CustomerId = customer.Id,
-            AdviserId = adviserId,
-            CreatedById = adviserId,
-            CreatedOn = DateTime.UtcNow,
-            IsActive = true
-        };
-
-        await _context.Users.AddAsync(customer);
-        await _context.CustomerAdvisors.AddAsync(relationship);
-        await _context.SaveChangesAsync();
-    }
 
     public async Task UpdateCustomerAsync(User customer)
     {
+        _logger.LogInformation("Database updated entity for customer {CustomerId}", customer.Id);
         _context.Users.Update(customer);
         await _context.SaveChangesAsync();
     }
 
     public async Task<ProductType?> GetProductTypeByCodeAsync(string code)
     {
+        _logger.LogInformation("Fetching product type with code {Code}", code);
         return await _context.ProductTypes
             .AsNoTracking()
             .FirstOrDefaultAsync(pt => pt.Code.ToUpper() == code.ToUpper() && pt.IsActive);
@@ -157,9 +150,11 @@ public class CustomerRepository : ICustomerRepository
 
         var emailAlreadyExists = await _context.Users
         .AnyAsync(u => u.Email.ToLower() == customer.Email.ToLower() && u.IsActive);
+       
 
         if (emailAlreadyExists)
         {
+            _logger.LogWarning("Attempted to create a customer with duplicate email: {Email}", customer.Email);
             throw new DuplicateEmailException(customer.Email);
         }
         await _context.Users.AddAsync(customer);

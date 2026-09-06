@@ -6,6 +6,7 @@ using Kelvinvale.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
+using Microsoft.Extensions.Logging;
 
 
 [ApiController]
@@ -15,12 +16,14 @@ using System.Security.Claims;
 public class CustomersController : ControllerBase
 {
     private readonly ICustomerRepository _customerRepo;
+    private readonly ILogger<CustomersController> _logger;
     private readonly IEnumerable<IProductOpeningRule> _openingRules; // Injected rules engine
 
-    public CustomersController(
+    public CustomersController(ILogger<CustomersController> logger,
         ICustomerRepository customerRepo,
         IEnumerable<IProductOpeningRule> openingRules)
     {
+        _logger = logger;
         _customerRepo = customerRepo;
         _openingRules = openingRules;
     }
@@ -35,6 +38,7 @@ public class CustomersController : ControllerBase
         var adviserId = GetCurrentUserId();
         var customers = await _customerRepo.GetAssignedCustomersWithDetailsAsync(adviserId);
         return Ok(customers);
+        
     }
 
     [HttpGet("{customerId:guid}")]
@@ -49,6 +53,7 @@ public class CustomersController : ControllerBase
 
         if (callerRole == "Customer" && callerId != customerId)
         {
+            _logger.LogWarning("Unauthorized access attempt to customer record."); 
             return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
             {
                 Status = StatusCodes.Status403Forbidden,
@@ -62,6 +67,7 @@ public class CustomersController : ControllerBase
             var isAssigned = await _customerRepo.IsCustomerAssignedToAdviserAsync(customerId, callerId);
             if (!isAssigned)
             {
+                _logger.LogWarning("Unauthorized access attempt to customer record."); 
                 return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
                 {
                     Status = StatusCodes.Status403Forbidden,
@@ -74,6 +80,7 @@ public class CustomersController : ControllerBase
         var customerDetails = await _customerRepo.GetCustomerDetailByIdAsync(customerId);
         if (customerDetails == null)
         {
+            _logger.LogWarning("Requested customer record not found."); 
             return NotFound(new ProblemDetails
             {
                 Status = StatusCodes.Status404NotFound,
@@ -95,6 +102,7 @@ public class CustomersController : ControllerBase
         var customerRoleId = await _customerRepo.GetCustomerRoleIdAsync();
         if (customerRoleId == null)
         {
+            _logger.LogError("Customer role reference is not configured.");
             return StatusCode(StatusCodes.Status500InternalServerError, "Customer role reference is not configured.");
         }
 
@@ -124,6 +132,7 @@ public class CustomersController : ControllerBase
 
             if (duplicateIsaInBatch)
             {
+                _logger.LogWarning("Duplicate ISA found in the request payload.");
                 return BadRequest(new ProblemDetails
                 {
                     Status = StatusCodes.Status400BadRequest,
@@ -138,6 +147,7 @@ public class CustomersController : ControllerBase
                 var productType = await _customerRepo.GetProductTypeByCodeAsync(prodReq.ProductTypeCode);
                 if (productType == null)
                 {
+                    _logger.LogWarning("Invalid product type requested.");
                     return BadRequest(new ProblemDetails
                     {
                         Status = StatusCodes.Status400BadRequest,
@@ -155,6 +165,7 @@ public class CustomersController : ControllerBase
                     var result = await rule.ValidateAsync(customer, prodReq.TaxYear);
                     if (!result.IsValid)
                     {
+                        _logger.LogWarning("Product opening rule validation failed.");
                         return BadRequest(new ProblemDetails
                         {
                             Status = StatusCodes.Status400BadRequest,
@@ -183,6 +194,7 @@ public class CustomersController : ControllerBase
         }
         catch (DuplicateEmailException ex)
         {
+            _logger.LogWarning("Duplicate email found during customer creation.");
             return Conflict(new ProblemDetails
             {
                 Status = StatusCodes.Status409Conflict,
@@ -193,6 +205,7 @@ public class CustomersController : ControllerBase
 
         var responseDto = await _customerRepo.GetCustomerDetailByIdAsync(customerId);
         return CreatedAtAction(nameof(GetCustomerById), new { customerId = customer.Id }, responseDto);
+        _logger.LogInformation( "Customer {CustomerId} created by adviser {AdviserId} with {ProductCount} products",customerId, adviserId, productsToCreate.Count);
     }
 
     [HttpPut("{customerId:guid}")]
@@ -207,6 +220,7 @@ public class CustomersController : ControllerBase
 
         if (callerId != customerId)
         {
+            _logger.LogWarning("Unauthorized access attempt to customer record.");
             return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
             {
                 Status = StatusCodes.Status403Forbidden,
@@ -218,6 +232,7 @@ public class CustomersController : ControllerBase
         var customer = await _customerRepo.GetByIdAsync(customerId);
         if (customer == null)
         {
+            _logger.LogWarning("Requested customer record not found.");
             return NotFound(new ProblemDetails
             {
                 Status = StatusCodes.Status404NotFound,
@@ -237,6 +252,7 @@ public class CustomersController : ControllerBase
         }
         catch (DuplicateEmailException ex)
         {
+            _logger.LogWarning("Duplicate email found during customer update.");
             return Conflict(new ProblemDetails
             {
                 Status = StatusCodes.Status409Conflict,
@@ -247,6 +263,7 @@ public class CustomersController : ControllerBase
 
         var updatedDetails = await _customerRepo.GetCustomerDetailByIdAsync(customerId);
         return Ok(updatedDetails);
+        _logger.LogInformation("Profile updated for customer {CustomerId} by user {CallerId}", customerId, callerId);
     }
 
     private Guid GetCurrentUserId() =>

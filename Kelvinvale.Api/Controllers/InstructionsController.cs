@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
+using Kelvinvale.Domain;
 
 namespace Kelvinvale.Api.Controllers
 {
@@ -14,18 +15,23 @@ namespace Kelvinvale.Api.Controllers
         [Authorize]
         public class InstructionsController : ControllerBase
         {
-            private const long IsaAnnualAllowancePence = 2000000; // £20,000
-            private const int SippMinimumPensionAge = 55;
+        long IsaAnnualAllowancePence = DomainConstants.IsaAnnualAllowancePence;
+        int SippMinimumPensionAge = DomainConstants.SippMinimumPensionAge;
+        private readonly IInstructionRepository _instructionRepo;
+        private readonly ILogger<InstructionsController> _logger;
+        private readonly ICustomerRepository _customerRepo;
+        private readonly IIsaSubscriptionAllowanceRule _isaAllowanceRule;
 
-            private readonly IInstructionRepository _instructionRepo;
-            private readonly ICustomerRepository _customerRepo;
-
-            public InstructionsController(
+        public InstructionsController(
                 IInstructionRepository instructionRepo,
-                ICustomerRepository customerRepo)
+                ILogger<InstructionsController> logger,
+                ICustomerRepository customerRepo,
+                IIsaSubscriptionAllowanceRule isaAllowanceRule)
             {
                 _instructionRepo = instructionRepo;
                 _customerRepo = customerRepo;
+                _logger = logger;
+                _isaAllowanceRule = isaAllowanceRule;
             }
 
             [HttpPost]
@@ -40,6 +46,7 @@ namespace Kelvinvale.Api.Controllers
                 // 1. Amount Verification (> 0 pence)
                 if (request.AmountPence <= 0)
                 {
+                    _logger.LogWarning("Invalid instruction amount provided for product {ProductId}", productId);
                     return BadRequest(new ProblemDetails
                     {
                         Status = StatusCodes.Status400BadRequest,
@@ -51,6 +58,8 @@ namespace Kelvinvale.Api.Controllers
                 // 2. Reject Advisers explicitly
                 var callerRole = User.FindFirst(ClaimTypes.Role)?.Value
                                  ?? Request.Headers["X-Caller-Role"].FirstOrDefault();
+
+                _logger.LogInformation("Caller role: {CallerRole}", callerRole);
 
                 if (string.Equals(callerRole, "Adviser", StringComparison.OrdinalIgnoreCase))
                 {
@@ -68,6 +77,7 @@ namespace Kelvinvale.Api.Controllers
                 var customer = await _customerRepo.GetByIdAsync(callerId);
                 if (customer == null)
                 {
+                    _logger.LogWarning("Customer not found for ID: {CallerId}", callerId);
                     return NotFound(new ProblemDetails
                     {
                         Status = StatusCodes.Status404NotFound,
@@ -80,6 +90,7 @@ namespace Kelvinvale.Api.Controllers
                 var product = await _instructionRepo.GetProductWithHoldingsAndCustomerAsync(productId);
                 if (product == null)
                 {
+                    _logger.LogWarning("Product not found for ID: {ProductId}", productId);
                     return NotFound(new ProblemDetails
                     {
                         Status = StatusCodes.Status404NotFound,
@@ -103,6 +114,7 @@ namespace Kelvinvale.Api.Controllers
                 var instructionType = await _instructionRepo.GetInstructionTypeByCodeAsync(request.Type);
                 if (instructionType == null)
                 {
+                    _logger.LogWarning("Invalid instruction type provided: {InstructionType}", request.Type);
                     return BadRequest(new ProblemDetails
                     {
                         Status = StatusCodes.Status400BadRequest,
@@ -130,28 +142,33 @@ namespace Kelvinvale.Api.Controllers
                 switch (request.Type.ToUpperInvariant())
                 {
                     case "SUBSCRIPTION":
-                        if (product.ProductType.Code.Equals("ISA", StringComparison.OrdinalIgnoreCase))
-                        {
-                            var currentSubs = await _instructionRepo.GetIsaSubscriptionsSumInTaxYearAsync(product.CustomerId, product.TaxYear);
-                            if (currentSubs + request.AmountPence > IsaAnnualAllowancePence)
-                            {
-                                var remainingPence = Math.Max(0, IsaAnnualAllowancePence - currentSubs);
-                                return BadRequest(new ProblemDetails
-                                {
-                                    Status = StatusCodes.Status400BadRequest,
-                                    Title = "ISA Allowance Exceeded",
-                                    Detail = $"Instruction of £{request.AmountPence / 100.0:F2} exceeds remaining allowance of £{remainingPence / 100.0:F2}."
-                                });
-                            }
-                        }
-                        break;
+                    if (product.ProductType.Code.Equals("ISA", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var allowanceResult = await _isaAllowanceRule.ValidateAsync(
+                            product.CustomerId,
+                            product.TaxYear,
+                            request.AmountPence);
 
-                    case "WITHDRAWAL":
+                        if (!allowanceResult.IsValid)
+                        {
+                            _logger.LogWarning("ISA subscription amount exceeds annual allowance for product {ProductId}", productId);
+                            return BadRequest(new ProblemDetails
+                            {
+                                Status = StatusCodes.Status400BadRequest,
+                                Title = "ISA Allowance Exceeded",
+                                Detail = allowanceResult.ErrorMessage
+                            });
+                        }
+                    }
+                    break;
+
+                case "WITHDRAWAL":
                         if (product.ProductType.Code.Equals("SIPP", StringComparison.OrdinalIgnoreCase))
                         {
                             var dob = product.Customer.DateOfBirth;
                             if (!dob.HasValue || dob.Value.AddYears(SippMinimumPensionAge) > DateTime.UtcNow)
                             {
+                                _logger.LogWarning("SIPP withdrawal attempted before minimum retirement age for product {ProductId}", productId);
                                 return BadRequest(new ProblemDetails
                                 {
                                     Status = StatusCodes.Status400BadRequest,
@@ -164,6 +181,7 @@ namespace Kelvinvale.Api.Controllers
                         if (sourceHolding == null || sourceHolding.AmountPence < request.AmountPence)
                         {
                             var available = sourceHolding?.AmountPence ?? 0;
+                            _logger.LogWarning("Insufficient balance for withdrawal for product {ProductId}", productId);
                             return BadRequest(new ProblemDetails
                             {
                                 Status = StatusCodes.Status400BadRequest,

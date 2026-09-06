@@ -3,23 +3,24 @@ using Kelvinvale.Application.Interfaces;
 using Kelvinvale.Domain.Entities;
 using Kelvinvale.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
-using System;
-using System.Collections.Generic;
-using System.Text;
+using Microsoft.Extensions.Logging;
 
 namespace Kelvinvale.Infrastructure.Repositories
 {
     public class InstructionRepository : IInstructionRepository
     {
         private readonly KelvinvaleDbContext _context;
+        private readonly ILogger<InstructionRepository> _logger;    
 
-        public InstructionRepository(KelvinvaleDbContext context)
+        public InstructionRepository(KelvinvaleDbContext context, ILogger<InstructionRepository> logger)
         {
             _context = context;
+            _logger = logger;
         }
 
         public async Task<Product?> GetProductWithHoldingsAndCustomerAsync(Guid productId)
         {
+            _logger.LogInformation("Fetching product with ID {ProductId}", productId);
             // AsNoTracking ensures early validation does not pollute EF Core's ChangeTracker
             return await _context.Products
                 .AsNoTracking()
@@ -32,6 +33,7 @@ namespace Kelvinvale.Infrastructure.Repositories
 
         public async Task<InstructionType?> GetInstructionTypeByCodeAsync(string code)
         {
+
             return await _context.InstructionTypes
                 .AsNoTracking()
                 .FirstOrDefaultAsync(it => it.Code.ToUpper() == code.ToUpper() && it.IsActive);
@@ -46,6 +48,7 @@ namespace Kelvinvale.Infrastructure.Repositories
 
         public async Task<long> GetIsaSubscriptionsSumInTaxYearAsync(Guid customerId, int taxYear)
         {
+            _logger.LogInformation("Calculating ISA subscriptions sum for customer {CustomerId} in tax year {TaxYear}", customerId, taxYear);
             return await _context.Instructions
                 .AsNoTracking()
                 .Where(i => i.Product.CustomerId == customerId
@@ -69,7 +72,8 @@ namespace Kelvinvale.Infrastructure.Repositories
 
             await strategy.ExecuteAsync(async () =>
             {
-              
+                _logger.LogInformation("Executing instruction for product {ProductId}", instruction.ProductId);
+
                     // 1. Ledger entry: Always record instruction
                     await _context.Instructions.AddAsync(instruction);
 
@@ -84,9 +88,9 @@ namespace Kelvinvale.Infrastructure.Repositories
                     switch (typeUpper)
                     {
                         case "SUBSCRIPTION":
-                            if (sourceHolding != null)
+                            if (sourceHolding != null || sourceHolding.AmountPence < amountPence)
                             {
-                                // Row exists -> UPDATE
+                                _logger.LogInformation("Updating existing holding for product {ProductId}", instruction.ProductId);
                                 sourceHolding.AmountPence += amountPence;
                                 sourceHolding.ModifiedOn = DateTime.UtcNow;
                                 sourceHolding.ModifiedById = callerId;
@@ -104,6 +108,7 @@ namespace Kelvinvale.Infrastructure.Repositories
                                     CreatedOn = DateTime.UtcNow,
                                     IsActive = true
                                 };
+                                _logger.LogInformation("Creating new holding for product {ProductId}", instruction.ProductId);
                                 await _context.Holdings.AddAsync(newHolding);
                             }
                             break;
@@ -111,6 +116,7 @@ namespace Kelvinvale.Infrastructure.Repositories
                         case "WITHDRAWAL":
                             if (sourceHolding == null || sourceHolding.AmountPence < amountPence)
                             {
+                                _logger.LogWarning("Insufficient balance to execute withdrawal for product {ProductId}", instruction.ProductId);    
                                 throw new InvalidOperationException("Insufficient balance to execute withdrawal.");
                             }
 
@@ -118,11 +124,13 @@ namespace Kelvinvale.Infrastructure.Repositories
                             sourceHolding.AmountPence -= amountPence;
                             sourceHolding.ModifiedOn = DateTime.UtcNow;
                             sourceHolding.ModifiedById = callerId;
+                            _logger.LogInformation("Executing withdrawal for product {ProductId}", instruction.ProductId);
                             break;
 
                         case "SWITCH":
                             if (sourceHolding == null || sourceHolding.AmountPence < amountPence)
                             {
+                                _logger.LogWarning("Insufficient source balance to execute switch for product {ProductId}", instruction.ProductId);
                                 throw new InvalidOperationException("Insufficient source balance to execute switch.");
                             }
 
@@ -130,6 +138,7 @@ namespace Kelvinvale.Infrastructure.Repositories
                             sourceHolding.AmountPence -= amountPence;
                             sourceHolding.ModifiedOn = DateTime.UtcNow;
                             sourceHolding.ModifiedById = callerId;
+                            _logger.LogInformation("Executing switch for product {ProductId}", instruction.ProductId);
 
                             // B. Credit destination fund holding (Check -> Update or Insert)
                             var targetHolding = await _context.Holdings
@@ -142,6 +151,7 @@ namespace Kelvinvale.Infrastructure.Repositories
                                 targetHolding.AmountPence += amountPence;
                                 targetHolding.ModifiedOn = DateTime.UtcNow;
                                 targetHolding.ModifiedById = callerId;
+                                _logger.LogInformation("Updating existing holding for product {ProductId}", instruction.ProductId);
                             }
                             else
                             {
@@ -155,6 +165,7 @@ namespace Kelvinvale.Infrastructure.Repositories
                                     CreatedOn = DateTime.UtcNow,
                                     IsActive = true
                                 };
+                                _logger.LogInformation("Creating new holding for product {ProductId}", instruction.ProductId);
                                 await _context.Holdings.AddAsync(newTargetHolding);
                             }
                             break;

@@ -1,5 +1,7 @@
 using Kelvinvale.Api.Authentication;
+using Kelvinvale.Api.Filters;
 using Kelvinvale.Application.Interfaces;
+using Kelvinvale.Application.Rules.Instruction;
 using Kelvinvale.Application.Rules.Product;
 using Kelvinvale.Infrastructure.Data;
 using Kelvinvale.Infrastructure.Repositories;
@@ -7,10 +9,8 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
 
-builder.Services.AddControllers();
-// Learn more about configuring OpenAPI at 
+// Configuring OpenAPI 
 builder.Services.AddOpenApi();
 // Add basic health check services
 builder.Services.AddHealthChecks();
@@ -23,6 +23,11 @@ builder.Services.AddScoped<IProductOpeningRule, IsaSingleAccountRule>();
 builder.Services.AddScoped<IProductOpeningRule, SippAgeEligibilityRule>();
 builder.Services.AddScoped<IInstructionRepository, InstructionRepository>();
 builder.Services.AddScoped<IAuditRepository, AuditRepository>();
+builder.Services.AddScoped<IIsaSubscriptionAllowanceRule, IsaSubscriptionAllowanceRule>();
+builder.Services.AddControllers(options =>
+{
+    options.Filters.Add<AuditLogActionFilter>();
+});
 
 
 builder.Services.AddDbContext<KelvinvaleDbContext>(options =>
@@ -56,6 +61,7 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
+
 //Seed database on startup
 using (var scope = app.Services.CreateScope())
 {
@@ -69,7 +75,7 @@ using (var scope = app.Services.CreateScope())
 
     // Seed data (ensure this doesn't call relational SQL directly)
     await DbInitializer.SeedAsync(context);
-    await DbInitializer.SeedAsync(context);
+    
 }
 
 // Configure the HTTP request pipeline.

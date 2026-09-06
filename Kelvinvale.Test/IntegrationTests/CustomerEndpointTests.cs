@@ -1,6 +1,5 @@
 ﻿using System.Net;
 using System.Net.Http.Json;
-using NUnit.Framework;
 
 namespace Kelvinvale.Tests.IntegrationTests;
 

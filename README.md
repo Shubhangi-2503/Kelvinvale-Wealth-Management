@@ -101,115 +101,98 @@ Clone or download this repository to your local machine:
 ### Core Architecture & Technical Implementation
 We implemented a dynamic, two-tier security pipeline combining database-backed **Claims Enrichment** and **Role-Based Access Control (RBAC)** at the perimeter with **Relationship-Based Access Control (ReBAC / ABAC)** at the data repository boundary:
 
-* **Zero-Trust Identity Ingestion (`X-Caller-Id` Only):** Callers supply solely an `X-Caller-Id` (GUID) header. The API intentionally does not accept caller-declared role headers.
-* **Database Claims Enrichment:** An internal authentication handler resolves the incoming `X-Caller-Id` against the database (`SELECT Role, IsActive FROM Users WHERE Id = @callerId`). If the caller exists and is active, their verified role is injected in-memory into the `ClaimsPrincipal` as `ClaimTypes.Role` and `ClaimTypes.NameIdentifier`. Decommissioned users (`IsActive = 0`) are rejected immediately.
-* **Perimeter Role Gate (RBAC):** Standard endpoint attributes (`[Authorize(Roles = "...")]`) evaluate the enriched claims in memory, terminating invalid actions early (e.g., customers cannot hit onboarding routes; advisers cannot place trading instructions).
-* **Data Tenancy Gate (ReBAC / ABAC):** Because claims cannot capture dynamic database relationships, repository queries enforce strict isolation (`WHERE CustomerId = @callerId AND IsActive = 1`). Advisers can access only clients explicitly mapped in `dbo.CustomerAdvisors`. Cross-tenant reads return `403 Forbidden`.
-* **Soft-Delete Lifecycle:** Physical deletion is strictly prohibited by financial compliance rules. Deactivating an entity sets `IsActive = 0`, updates `ModifiedOn` / `ModifiedById`, and triggers cascading deactivation of dependent child records.
-  
-### Architectural Rationale & Accepted Trade-Offs
-* **Why not pure RBAC?** Pure RBAC only asks, *"Are you an Adviser?"* Under RBAC alone, Adviser A could inspect and modify portfolios belonging to Adviser B's clients, and Customer A could drain Customer B's accounts. The brief explicitly mandates that no customer read or move another's money, and advisers only reach their assigned book. ReBAC eliminates this cross-tenant vulnerability.
-* **Why not store customer relationships inside JWT claims?** If an adviser manages 500 accounts, embedding those IDs exceeds HTTP header size limits (causing HTTP 431 errors). Furthermore, if client assignments change, cached token claims remain stale until expiration. Dynamic repository queries against `dbo.CustomerAdvisors` reflect reassignments immediately.
-* **Accepted Trade-offs:** For this evaluation, caller identities are stubbed via custom headers rather than federating a live OAuth2/OIDC identity server, keeping execution contained within the 4-hour build limit.
+### Key Decisions, Rationale & Production Roadmap
 
-### Production Roadmap & Enterprise Identity (IdP) Cost Analysis
+* **Header Isolation**: Accepted only `X-Caller-Id` because client-asserted roles risk immediate privilege escalation.  
+  * *Roadmap:* Transition entirely to cryptographically signed JWTs in production.
+* **Per-Request Role Resolution**: Resolved roles directly from the database per request because enforcing immediate deactivation for revoked accounts outweighed query latency.  
+  * *Roadmap:* Pair short-lived JWTs with an event-driven, low-latency Redis cache.
+* **Two-Tier Enforcement**: Combined perimeter `[Authorize]` RBAC with repository-level ReBAC queries because route attributes cannot prevent horizontal data leaks between customers or advisers.  
+  * *Roadmap:* Decouple relationship checks into a dedicated fine-grained authorization engine (e.g., OpenFGA).
+* **Dynamic Adviser Book Scoping**: Evaluated `dbo.CustomerAdvisors` dynamically on every query because caching or claim-embedding client IDs causes stale access when books transfer.  
+  * *Roadmap:* Retain dynamic database joins while optimising query performance using composite indexes.
+*  **Production Identity Transition**: Used a lightweight custom header handler to keep evaluation self-contained without external dependencies.  
+  * *Roadmap:* Migrate to a dedicated Duende IdentityServer supporting OAuth 2.0 with PKCE, RS256 JWTs, and OIDC discovery.
+
+### Production Roadmap & Enterprise Identity (IdP) 
 Because Kelvinvale operates in wealth management under FCA regulatory compliance, production perimeter security cannot rely on stubbed headers or public multitenant auth:
 1. **Custom Dedicated Identity Provider (IdP):** Deploy an isolated, self-hosted IdP service built with **Duende IdentityServer** on .NET 10. It will handle the OAuth 2.0 Authorisation Code Flow + PKCE, user authentication, and hardware-backed MFA (FIDO2/WebAuthn) off the core API request path.
 2. **Cryptographic JWT Validation:** The core API will replace header parsing with `Microsoft.AspNetCore.Authentication.JwtBearer`, validating token signatures against the IdP's `/.well-known/openid-configuration` and JWKS endpoints using HSM-managed RS256/ES256 asymmetric keys.
-3. **Dedicated IdP Cost & Run-Rate Analysis:**
-   * **Duende IdentityServer Enterprise License:** ~$12,500 – $24,900 / year (financial services tier with multi-client and protocol support).
-   * **Azure Key Vault Managed HSM / Premium:** ~$28,000 – $33,000 / year (£2,700/mo for dedicated FIPS 140-2 Level 3 hardware key signing).
-   * **High-Availability Compute (Azure Container Apps / App Service):** ~$2,500 – $4,500 / year across paired multi-region instances.
-   * **Annual CREST Penetration Testing (FCA Audit Standard):** ~$10,000 – $15,000 / year.
-   * **Total Run-Rate:** Hosting a dedicated, bank-grade self-hosted IdP incurs an estimated **£45,000 – £65,000 / year**. *(Alternatively, commercial SaaS providers like Microsoft Entra ID P2 or Auth0 Enterprise charge per active user/month, making a self-hosted IdP more cost-effective once active user volumes scale beyond 10,000 investors).*
+
 ---
 
-## 2. What to Tackle Next Given Another Day
+## 2(a). What to Tackle Next Given Another Day
 
-### 1. Full Soft-Delete & Decommissioning Engine (`IsActive = 0`)
-While the `IsActive` flag exists on domain models, the complete deactivation workflow will be implemented:
-* **Administrative Decommissioning:** Build secure endpoints allowing authenticated Admins to soft-delete Advisers or Customers.
-* **Cascading Soft-Deactivation:** Implement logic to cascade deactivations across related child entities. Deactivating a customer sets `IsActive = 0` across their active wrappers (ISA, GIA, SIPP), associated holdings, and adviser mappings (`dbo.CustomerAdvisors`), ensuring deactivated clients cannot be queried or targeted by financial instructions.
-* **EF Core Global Query Filters:** Enforce `modelBuilder.Entity<T>().HasQueryFilter(e => e.IsActive)` on `KelvinvaleDbContext` so inactive records are excluded from all read queries across the system by default.
+* **Global Exception Handler**: Implement a centralized custom exception middleware to intercept unhandled domain and validation errors, ensuring uniform RFC 7807 ProblemDetails responses without leaking internal stack traces.
+* **FluentValidation Pipeline**: Integrate a FluentValidation pipeline behavior to execute input validation before controller execution, keeping endpoints lean and guaranteeing only valid payloads reach business logic.
+*  **Pagination on Customer Retrieval**: Introduce cursor- or offset-based pagination on `GET /customers` to restrict unbounded query result sets and protect memory usage as the user base expands.
+*  **EF Core Global Query Filters**: Configure global query filters on all soft-deletable entities (`WHERE IsActive = 1`) to eliminate repetitive manual filters and prevent accidental exposure of deactivated records.
+*  **Application Insights Telemetry**: Add Azure Application Insights with structured telemetry to correlate distributed traces, monitor SQL execution times, and quickly diagnose production failures.
 
-### 2. Database Optimisation: Stored Procedures vs. EF Core Navigation Graphs
-* **High-Throughput Stored Procedures (SPs):** Replace high-volume or complex multi-table operational writes and aggregate read queries (`sp_GetCustomerPortfolioOverview`, `sp_DeactivateCustomerCascade`, `sp_AuditLogLedger`) with compiled SQL Stored Procedures to eliminate ORM query compilation overhead and streamline cross-table mutations into single network round-trips.
-* **EF Core Entity Graph Fixup:** For standard REST mutations across multi-table relationships (e.g., creating a Customer while simultaneously provisioning an Account and initial Holdings), fully leverage EF Core navigation properties and change-tracker foreign key fixup to execute transactional parent-child graph persistence within `SaveChangesAsync()` without manual SQL scripts.
+---
 
-### 3. Dedicated Self-Hosted Identity Provider (IdP)
-Migrate the perimeter from header-based simulation (`X-Caller-Id`) to an isolated, self-hosted Identity Provider using **Duende IdentityServer** on .NET 10. The IdP will run in a dedicated virtual network, managing user credentials, FIDO2/WebAuthn MFA, and cryptographically signed RS256/ES256 JWT tokens validated via OpenID Connect discovery (`/.well-known/openid-configuration`) and JWKS endpoints.
-
-### 4. Asynchronous Notifications via Azure Logic Apps
-Decouple customer notifications (e.g., account opening confirmations, ISA allowance warning alerts, trade completion summaries) from the core synchronous API execution path:
-* Expose an internal event trigger using an HTTP-triggered Azure Logic App workflow or Azure Service Bus topic.
-* The API will emit JSON event payloads (e.g., `InstructionExecutedEvent`) to the Logic App, which coordinates email dispatch, SMS notifications, and compliance archiving via Office connectors without adding latency to the main transaction.
-
-### 5. Payment Gateway & Open Banking Integration
-Implement a secure payment gateway integration for real-time customer account funding:
-* Integrate an FCA-authorized Open Banking provider (e.g., TrueLayer or Yapily) or Payment Gateway (Stripe/Modulr) using Payment Initiation Services (PIS).
-* Secure webhook endpoints using HMAC-SHA256 signature verification to process instant settlement callbacks, transitioning subscriptions from `Pending` to `Completed` with ledger consistency.
-
-### 6. Power BI Predictive Investment Dashboard
-Add predictive portfolio intelligence and forecasting:
-* Expose an aggregate, read-only analytics model to Microsoft Power BI via DirectQuery or Azure Synapse.
-* Implement financial projection algorithms (compound interest growth, statutory tax relief on SIPP contributions, and ISA tax-free compounding projections based on historical annualised interest rates and variable client risk profiles).
+## 2(b). Extended Roadmap (Given a Month)
+* **High-Throughput Stored Procedures**: Transition critical high-volume writes and complex reporting aggregates into compiled SQL Stored Procedures to bypass ORM mapping overhead, achieving maximum execution performance for heavy data operations while preserving a clean, unified data access layer in C#.
+* **Dedicated Self-Hosted Identity Provider**: Replace custom header-based identity simulation with an isolated Duende IdentityServer on .NET, implementing OAuth 2.0 PKCE, WebAuthn MFA, and RS256-signed JWTs.
+* **Asynchronous Event-Driven Notifications**: Decouple client communications (confirmations, allowance alerts) from the synchronous HTTP request path using Azure Service Bus and Logic Apps to reduce user-facing latency.
+* **Payment Gateway & Open Banking Integration**: Implement Open Banking Payment Initiation Services (PIS) with HMAC-SHA256 verified webhooks to enable real-time account funding and instant settlement transitions.
+* **Power BI Investment Intelligence**: Expose an aggregate read-only data model to Microsoft Power BI via DirectQuery to provide clients and advisers with predictive compounding projections and tax-relief forecasting.
 ---
 
 ## 3. Azure Infrastructure, Database Isolation & Azure DevOps CI/CD Pipeline
 
-### Environment & Database Isolation Strategy
-Every tier runs on a separate, dedicated infrastructure stack in Azure to ensure strict tenant and compliance boundaries:
+### Azure Cloud Infrastructure
 
-| Environment | Purpose | Target Branch | Approval Required? | Database Hosting & Secret Management |
-| :--- | :--- | :--- | :--- | :--- |
-| **DEV** | Feature & scratch testing | Personal feature branches (`users/*`, `feature/*`) | **No** (Direct manual deploy) | Dedicated hosted DB (`kelvinvale-db-dev`). Connection string stored in `kv-kelvinvale-dev`. |
-| **QA** | Integration & system testing | Sprint release candidate (`develop`, `sprint/*`) | **No** (Direct manual deploy) | Dedicated hosted DB (`kelvinvale-db-qa`). Connection string stored in `kv-kelvinvale-qa`. |
-| **UAT** | User acceptance & staging testing | Pre-release / hotfix branches (`release/*`, `hotfix/*`) | **No** (Direct manual deploy) | Dedicated hosted DB (`kelvinvale-db-uat`). Connection string stored in `kv-kelvinvale-uat`. |
-| **PROD** | Live FCA-regulated execution | Main / Master (`main`) | **Yes** (Strict human sign-off gate) | Dedicated hosted DB (`kelvinvale-db-prod`). Private Endpoints only; connection string stored in HSM-backed `kv-kelvinvale-prod`. |
-
-#### How Databases & Connected Services Are Configured
-1. **Zero Hardcoded Secrets:** Application configurations (`appsettings.json`) contain only placeholders. 
-2. **Key Vault Dynamic Resolution:** Each App Service has a single App Setting configured:
-   * `KeyVaultUri`: e.g. `https://kv-kelvinvale-prod.vault.azure.net/`
-3. **Passwordless Managed Identity:** The App Service in each environment uses its Azure System-Assigned Managed Identity to pull secrets at runtime. It requests `ConnectionStrings--KelvinvaleDb`, which overwrites the in-memory connection string without any plaintext credentials residing in the repository.
-4. **External Services (Logic Apps & Power BI):**
-   * **Azure Logic Apps:** Connected via managed webhook triggers. The environment-specific trigger endpoint URL is stored in Key Vault as `ExternalServices--LogicAppNotificationUrl`.
-   * **Power BI:** Connects directly to read replicas of the respective Azure SQL database using Azure Active Directory (Entra ID) service principals, keeping analytical reporting workloads off the primary transactional write database.
-
-
-### Pull Request (PR) Quality Gate (Continuous Integration)
-Every pull request targeting `main` or `develop` triggers an automated validation pipeline in Azure DevOps before code can be reviewed or merged:
-* **Dependency Restore:** `dotnet restore --locked-mode` to ensure reproducible packages.
-* **Deterministic Build:** `dotnet build --no-restore -c Release /warnaserror` (any compiler warning fails the build).
-* **Test Suite Execution:** Executes all Unit and Integration tests with code coverage collection.
-* **85% Coverage Gate:** Enforces an automated quality gate requiring a minimum of 85% branch coverage across financial rule engines and authorisation paths.
-* **Static Security Analysis:** Scans code for hardcoded secrets, SQL injection vectors, and dependency vulnerabilities via SARIF/SonarCloud.
-
-
-### Azure DevOps Deployment Pipeline Architecture
-
-The deployment workflow uses a single, multi-stage Azure DevOps YAML pipeline (`azure-pipelines.yml`) supporting both manual exploratory deployments and regulated production releases:
+*  **Azure App Service**: Hosts the Web API with deployment slots to enable zero-downtime blue/green deployments.
+*  **Azure SQL Database**: Provides zone-redundant transactional storage to survive physical data center disruptions.
+*  **Azure Key Vault**: Stores connection strings and credentials securely, avoiding plaintext secrets in source control.
+*  **Azure Application Insights**: Collects distributed traces, SQL execution metrics, and structured telemetry.
+*  **Azure Front Door / APIM**: Serves as the perimeter reverse proxy, providing Web Application Firewall (WAF) filtering and rate limiting.
 
 ---
 
-## 4. AI Usage & Engineering Governance
+###  Environment & Database Isolation
 
-In line with professional delivery standards, AI tools were leveraged as an engineering force-multiplier for architectural research, test scaffolding, and documentation, while all domain logic, financial modelling, and security boundaries were strictly authored and verified manually.
+* **Dedicated Environments (DEV, QA, UAT, PROD)**: Deploys separate infrastructure and database instances per tier to prevent test data from contaminating production records.
+* **Passwordless Managed Identity**: Uses Azure System-Assigned Managed Identity to pull configuration at runtime without storing passwords in `appsettings.json`.
+* **Read-Replica Analytics**: Connects reporting tools like Power BI directly to read replicas, protecting primary write performance.
+
+---
+
+###  CI/CD Pipeline & Quality Gates
+
+1. **Deterministic Dependency Restore**: Runs `dotnet restore --locked-mode` against `packages.lock.json` to prevent dependency drift.
+2. **Zero-Tolerance Compilation**: Builds with `/warnaserror` so any compiler warning fails the build immediately.
+3. **Automated Test Execution**: Executes unit and integration test suites using `dotnet test`.
+4. **85% Branch Coverage Gate**: Enforces an automated quality gate with Coverlet to ensure financial and authorization logic is verified.
+5. **Static Security Analysis (SAST)**: Scans for vulnerabilities, tainted data paths, and secret leaks before packaging.
+6. **Staging Deployment & Health Probe**: Deploys to an App Service staging slot and verifies service readiness via `GET /health`.
+7. **Manual Production Approval & Swap**: Pauses for human sign-off in Azure DevOps before executing a seamless slot swap to live traffic.
+
+---
+
+## 4. AI Usage & Engineering Oversight
+
+In line with professional delivery standards, AI tools were leveraged as force multipliers for research, repetitive scaffolding, and documentation, while all domain rules, financial calculations, and security boundaries were authored, verified, and owned manually.
 
 ### Tools & Scope of Use
-* **NotebookLM:** Used as an interactive research assistant to analyse complex documentation, specifically Microsoft's RESTful Web API Design patterns, RFC 7807 problem details specifications, and claims transformation mechanics.
-* **Google Gemini:** Leveraged for rapid boilerplate generation, integration test fixture scaffolding, generating edge-case permutations, and drafting comprehensive architectural documentation.
+* **Google Gemini**: Primary accelerator for DTO contracts, EF Core mapping boilerplate, integration test scaffolding, and initial documentation drafting.
+* **NotebookLM**: Architectural research assistant for analyzing RFC 7807 specifications, claims transformation patterns, and REST best practices.
+* **Claude (Free Tier)**: Second-opinion codebase auditor to identify gaps, architectural risks, and missing patterns (e.g., highlighting the need for a centralized global exception handler). *(Note: Utilized within free-tier limits despite a strong preference for Claude's analytical precision).*
 
-### Accelerated Workflows (What AI Generated)
-* **Integration Test Scaffolding:** Accelerated the creation of parameterised NUnit fixtures testing authorisation matrices across Admin, Adviser, and Customer roles.
-* **DTO & Model Boilerplate:** Rapidly generated repetitive request/response contract definitions and FluentValidation rule skeletons.
-* **Documentation Structuring:** Assisted in organising operational runbooks and architectural decision records (ADRs) into scannable formats.
+###  Accelerated Workflows
+* **Instruction-Driven Implementation**: Rapidly scaffolded and implemented baseline code structures strictly following detailed prompt specifications and architectural constraints.
+* **Boilerplate & Contracts**: Generated repetitive request/response DTOs, entity configurations, and baseline FluentValidation skeletons.
+* **Test Matrix Scaffolding**: Accelerated boilerplate setup for parameterized integration test fixtures covering Admin, Adviser, and Customer role permutations.
+* **Documentation Layout**: Structured architectural sections and operational roadmaps into scannable formats.
 
-### Critical Engineering Overrides (What Was Rejected or Corrected)
-* **Floating-Point vs. Integer Precision:** AI models initially suggested using standard `decimal` or `double` types for account balances. This was rejected in favour of discrete `long` integer pence (e.g., £500.00 represented as `50000`) to eliminate floating-point drift and adhere to UK banking accounting standards.
-* **Client-Supplied Role Claims:** Initial AI scaffolding suggested accepting `X-Caller-Role` directly from incoming headers. This was overridden with a secure **Claims Enrichment** pattern: the API accepts only `X-Caller-Id` and resolves the verified role directly against the database to prevent client-side privilege escalation.
-* **In-Memory Repository Mocks:** AI suggested heavy mocking libraries (`Moq`) for repository layers. This was replaced with Entity Framework Core in-memory providers and container-ready execution patterns to ensure genuine relational querying behaviour during tests.
-* **SQL Constraint Handling:** AI relied on catching SQL Server unique constraint codes (`2601/2627`) after the fact for duplicate emails. This was corrected by adding explicit application-level pre-validation checks to ensure consistent 400 Bad Request responses regardless of database provider.
+### Engineering Overrides, Corrections & Friction Points
+* **Security Enforcement**: Rejected AI-proposed client headers (`X-Caller-Role`); replaced with server-side database role resolution from `X-Caller-Id` to prevent privilege escalation.
+* **Financial Precision**: Overrode suggested decimal/floating-point types in favor of discrete integer pence (`long AmountPence`) to eliminate rounding drift per UK accounting practices.
+* **Test Architecture**: Discarded shallow `Moq` unit test setups in favor of EF Core in-memory providers to test genuine LINQ execution and ReBAC filters.
+* **Context Drops & Omissions**: Corrected instances where AI lost conversational context, omitted specified edge-case scenarios, or lost track of pre-existing code.
+* **Code Hygiene**: Audited and removed generated dead code, redundant variables, and unsolicited comments.
+* **Markdown Citation Artifacts**: Cleaned up repetitive AI hallucination artifacts (e.g., ``) where models failed to follow negative prompting constraints.
 
-### Verification & Quality Assurance
-* All AI-assisted code was subjected to strict static analysis (`/warnaserror`), verified against 85%+ branch coverage gates, and manually audited to ensure full compliance with FCA statutory wrapper rules (e.g., ISA £20k annual contribution thresholds and SIPP minimum age limits).
+### Verification & Ownership
+Every line of code and test assertion was manually reviewed, compiled under strict zero-warning policy (`/warnaserror`), and validated against an 85%+ branch coverage gate to ensure domain correctness and FCA compliance.

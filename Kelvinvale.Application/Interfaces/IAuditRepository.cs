@@ -7,8 +7,8 @@ namespace Kelvinvale.Application.Interfaces
 {
     public interface IAuditRepository
     {
-        Task<string?> GetUserRoleNameByIdAsync(Guid userId, CancellationToken ct = default);
-        Task InsertAuditLogAsync(AuditLog log, CancellationToken ct = default);
+        Task<string?> GetUserRoleNameByIdAsync(Guid userId);
+        Task InsertAuditLogAsync(AuditLog log);
     }
 }
 

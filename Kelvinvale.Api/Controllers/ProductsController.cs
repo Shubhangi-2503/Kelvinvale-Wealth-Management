@@ -16,15 +16,18 @@ namespace Kelvinvale.Api.Controllers
     {
         private readonly IProductRepository _productRepo;
         private readonly ICustomerRepository _customerRepo;
+        private readonly ILogger<ProductsController> _logger;
         private readonly IEnumerable<IProductOpeningRule> _openingRules;
 
         public ProductsController(
             IProductRepository productRepo,
             ICustomerRepository customerRepo,
+            ILogger<ProductsController> logger,
             IEnumerable<IProductOpeningRule> openingRules)
         {
             _productRepo = productRepo;
             _customerRepo = customerRepo;
+            _logger = logger;   
             _openingRules = openingRules;
         }
 
@@ -35,11 +38,13 @@ namespace Kelvinvale.Api.Controllers
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
         public async Task<IActionResult> GetCustomerProducts(Guid customerId)
         {
+            _logger.LogInformation("Fetching products for customer: {CustomerId}", customerId);
             var callerId = GetCurrentUserId();
             var callerRole = User.FindFirstValue(ClaimTypes.Role);
 
             if (callerRole == "Customer" && callerId != customerId)
             {
+                _logger.LogWarning("Unauthorized access attempt by user: {CallerId}", callerId);    
                 return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
                 {
                     Status = StatusCodes.Status403Forbidden,
@@ -50,9 +55,11 @@ namespace Kelvinvale.Api.Controllers
 
             if (callerRole == "Adviser")
             {
+                _logger.LogInformation("Caller role: {CallerRole}", callerRole);
                 var isAssigned = await _customerRepo.IsCustomerAssignedToAdviserAsync(customerId, callerId);
                 if (!isAssigned)
                 {
+                    _logger.LogWarning("Adviser {CallerId} attempted to view products for unassigned customer {CustomerId}", callerId, customerId);
                     return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
                     {
                         Status = StatusCodes.Status403Forbidden,
@@ -63,6 +70,7 @@ namespace Kelvinvale.Api.Controllers
             }
 
             var products = await _productRepo.GetProductsByCustomerIdAsync(customerId);
+            _logger.LogInformation("Retrieved products for customer: {CustomerId}", customerId);
             return Ok(products);
         }
 
@@ -88,8 +96,11 @@ namespace Kelvinvale.Api.Controllers
             var callerId = GetCurrentUserId();
             var callerRole = User.FindFirstValue(ClaimTypes.Role);
 
+            _logger.LogInformation("Fetching product details for ID: {ProductId}", productId);
+
             if (callerRole == "Customer" && callerId != product.CustomerId)
             {
+                _logger.LogWarning("Unauthorized access attempt by user: {CallerId}", callerId);
                 return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
                 {
                     Status = StatusCodes.Status403Forbidden,
@@ -103,6 +114,7 @@ namespace Kelvinvale.Api.Controllers
                 var isAssigned = await _customerRepo.IsCustomerAssignedToAdviserAsync(product.CustomerId, callerId);
                 if (!isAssigned)
                 {
+                    _logger.LogWarning("Adviser {CallerId} attempted to view product {ProductId} for unassigned customer {CustomerId}", callerId, productId, product.CustomerId);
                     return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
                     {
                         Status = StatusCodes.Status403Forbidden,
@@ -112,6 +124,7 @@ namespace Kelvinvale.Api.Controllers
                 }
             }
 
+            _logger.LogInformation("Returning product details for ID: {ProductId}", productId);
             return Ok(product);
         }
 
@@ -129,6 +142,7 @@ namespace Kelvinvale.Api.Controllers
             var isAssigned = await _customerRepo.IsCustomerAssignedToAdviserAsync(customerId, adviserId);
             if (!isAssigned)
             {
+                _logger.LogWarning("Adviser {AdviserId} attempted to open product for unassigned customer {CustomerId}", adviserId, customerId);
                 return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
                 {
                     Status = StatusCodes.Status403Forbidden,
@@ -151,6 +165,7 @@ namespace Kelvinvale.Api.Controllers
             var productType = await _productRepo.GetProductTypeByCodeAsync(request.ProductTypeCode);
             if (productType == null)
             {
+                _logger.LogWarning("Invalid product type requested: {ProductTypeCode}", request.ProductTypeCode);
                 return BadRequest(new ProblemDetails
                 {
                     Status = StatusCodes.Status400BadRequest,
@@ -168,6 +183,7 @@ namespace Kelvinvale.Api.Controllers
                 var result = await rule.ValidateAsync(customer, request.TaxYear);
                 if (!result.IsValid)
                 {
+                    _logger.LogWarning("Product opening rule failed for customer {CustomerId}: {ErrorMessage}", customerId, result.ErrorMessage);
                     return BadRequest(new ProblemDetails
                     {
                         Status = StatusCodes.Status400BadRequest,
@@ -189,7 +205,7 @@ namespace Kelvinvale.Api.Controllers
             };
 
             await _productRepo.CreateProductAsync(product);
-
+            _logger.LogInformation("Product created successfully for customer: {CustomerId}", customerId);  
             var responseDto = await _productRepo.GetProductDetailByIdAsync(product.Id);
             return CreatedAtAction(nameof(GetProductById), new { productId = product.Id }, responseDto);
         }

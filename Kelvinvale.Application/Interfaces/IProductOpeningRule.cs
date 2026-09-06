@@ -8,7 +8,7 @@ namespace Kelvinvale.Application.Rules.Product
     public interface IProductOpeningRule
     {
         string ProductTypeCode { get; }
-        Task<RuleValidationResult> ValidateAsync(User customer, int taxYear, CancellationToken cancellationToken = default);
+        Task<RuleValidationResult> ValidateAsync(User customer, int taxYear);
     }
 }
 

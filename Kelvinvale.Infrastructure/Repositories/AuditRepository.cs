@@ -17,19 +17,19 @@ namespace Kelvinvale.Infrastructure.Repositories
             _context = context;
         }
 
-        public async Task<string?> GetUserRoleNameByIdAsync(Guid userId, CancellationToken ct = default)
+        public async Task<string?> GetUserRoleNameByIdAsync(Guid userId)
         {
             return await _context.Users
                 .AsNoTracking()
                 .Where(u => u.Id == userId && u.IsActive)
                 .Select(u => u.Role.Name)
-                .FirstOrDefaultAsync(ct);
+                .FirstOrDefaultAsync();
         }
 
-        public async Task InsertAuditLogAsync(AuditLog log, CancellationToken ct = default)
+        public async Task InsertAuditLogAsync(AuditLog log)
         {
-            await _context.AuditLogs.AddAsync(log, ct);
-            await _context.SaveChangesAsync(ct);
+            await _context.AuditLogs.AddAsync(log);
+            await _context.SaveChangesAsync();
         }
     }
 }

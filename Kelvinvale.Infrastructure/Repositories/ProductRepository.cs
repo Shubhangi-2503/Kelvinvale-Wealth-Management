@@ -3,33 +3,32 @@ using Kelvinvale.Application.Interfaces;
 using Kelvinvale.Domain.Entities;
 using Kelvinvale.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
-using System;
-using System.Collections.Generic;
-using System.Text;
+using Microsoft.Extensions.Logging;
 
 namespace Kelvinvale.Infrastructure.Repositories
 {
     public class ProductRepository : IProductRepository
     {
         private readonly KelvinvaleDbContext _context;
-
-        public ProductRepository(KelvinvaleDbContext context)
+        private readonly ILogger<ProductRepository> _logger;    
+        public ProductRepository(KelvinvaleDbContext context, ILogger<ProductRepository> logger)
         {
             _context = context;
+            _logger = logger;
         }
 
         public async Task<bool> HasActiveProductOfTypeInTaxYearAsync(
             Guid customerId,
             string productTypeCode,
-            int taxYear,
-            CancellationToken ct = default)
+            int taxYear)
         {
+            _logger.LogInformation("Checking for active product of type {ProductTypeCode} in tax year {TaxYear} for customer {CustomerId}", productTypeCode, taxYear, customerId);
             return await _context.Products
                 .AsNoTracking()
                 .AnyAsync(p => p.CustomerId == customerId
                             && p.ProductType.Code.ToUpper() == productTypeCode.ToUpper()
                             && p.TaxYear == taxYear
-                            && p.IsActive, ct);
+                            && p.IsActive);
         }
 
         public async Task<IEnumerable<ProductDetailDto>> GetProductsByCustomerIdAsync(Guid customerId)
@@ -51,12 +50,13 @@ namespace Kelvinvale.Infrastructure.Repositories
                 .Include(i => i.Fund)
                 .OrderByDescending(i => i.CreatedOn)
                 .ToListAsync();
-
+            
             return products.Select(p => MapToDto(p, instructions)).ToList();
         }
 
         public async Task<ProductDetailDto?> GetProductDetailByIdAsync(Guid productId)
         {
+            _logger.LogInformation("Retrieving product details for ID: {ProductId}", productId);
             var product = await _context.Products
                 .AsNoTracking()
                 .Where(p => p.Id == productId && p.IsActive)
@@ -75,17 +75,20 @@ namespace Kelvinvale.Infrastructure.Repositories
                 .OrderByDescending(i => i.CreatedOn)
                 .ToListAsync();
 
+            _logger.LogInformation("Retrieved details for product ID: {ProductId}", productId);
             return MapToDto(product, instructions);
         }
 
         public async Task<Product?> GetByIdAsync(Guid productId)
         {
+            _logger.LogInformation("Retrieving product by ID: {ProductId}", productId);
             return await _context.Products
                 .FirstOrDefaultAsync(p => p.Id == productId && p.IsActive);
         }
 
         public async Task<ProductType?> GetProductTypeByCodeAsync(string code)
         {
+            _logger.LogInformation("Retrieving product type by code: {Code}", code);    
             return await _context.ProductTypes
                 .AsNoTracking()
                 .FirstOrDefaultAsync(pt => pt.Code.ToUpper() == code.ToUpper() && pt.IsActive);
@@ -93,6 +96,7 @@ namespace Kelvinvale.Infrastructure.Repositories
 
         public async Task CreateProductAsync(Product product)
         {
+            _logger.LogInformation("Creating product for customer: {CustomerId}", product.CustomerId);
             await _context.Products.AddAsync(product);
             await _context.SaveChangesAsync();
         }

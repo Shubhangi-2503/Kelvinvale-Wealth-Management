@@ -35,7 +35,7 @@ public class ProductRulesTests
 
         // Tell Moq: Pretend the DB says "Yes, Alice already has an active ISA"
         _mockProductRepo
-            .Setup(repo => repo.HasActiveProductOfTypeInTaxYearAsync(customerId, "ISA", currentTaxYear, It.IsAny<CancellationToken>()))
+            .Setup(repo => repo.HasActiveProductOfTypeInTaxYearAsync(customerId, "ISA", currentTaxYear))
             .ReturnsAsync(true);
 
         // Act (Execute the actual business rule)
@@ -50,7 +50,7 @@ public class ProductRulesTests
 
         // Verify that the rule actually consulted the repository once
         _mockProductRepo.Verify(
-            repo => repo.HasActiveProductOfTypeInTaxYearAsync(customerId, "ISA", currentTaxYear, It.IsAny<CancellationToken>()),
+            repo => repo.HasActiveProductOfTypeInTaxYearAsync(customerId, "ISA", currentTaxYear),
             Times.Once);
     }
 

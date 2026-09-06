@@ -1,15 +1,14 @@
 ﻿using Kelvinvale.Domain.Entities;
-using System;
-using System.Collections.Generic;
-using System.Text;
+using Kelvinvale.Domain;
 
 namespace Kelvinvale.Application.Rules.Product
 {
     public class SippAgeEligibilityRule : IProductOpeningRule
     {
         public string ProductTypeCode => "SIPP";
+        int SippMinimumOpeningAge = DomainConstants.SippMinimumOpeningAge;  
 
-        public Task<RuleValidationResult> ValidateAsync(User customer, int taxYear, CancellationToken cancellationToken = default)
+        public Task<RuleValidationResult> ValidateAsync(User customer, int taxYear)
         {
             if (!customer.DateOfBirth.HasValue)
             {
@@ -19,7 +18,7 @@ namespace Kelvinvale.Application.Rules.Product
             var age = DateTime.UtcNow.Year - customer.DateOfBirth.Value.Year;
             if (customer.DateOfBirth.Value.Date > DateTime.UtcNow.AddYears(-age)) age--;
 
-            if (age < 18)
+            if (age < SippMinimumOpeningAge)
             {
                 return Task.FromResult(RuleValidationResult.Failure("Customer must be at least 18 years old to open a SIPP."));
             }

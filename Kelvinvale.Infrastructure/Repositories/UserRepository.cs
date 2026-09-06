@@ -21,7 +21,7 @@ namespace Kelvinvale.Infrastructure.Repositories
         {
             return await _dbContext.Users
                 .Include(u => u.Role)
-                .FirstOrDefaultAsync(u => u.Id == id);
+                .FirstOrDefaultAsync(u => u.Id == id && u.IsActive);
         }
     }
 }

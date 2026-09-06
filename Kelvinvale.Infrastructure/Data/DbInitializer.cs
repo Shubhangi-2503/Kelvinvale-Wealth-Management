@@ -22,16 +22,10 @@ public static class DbInitializer
     public static readonly Guid FundGlobalEquityId = Guid.Parse("99999999-9999-9999-9999-999999999901");
     public static readonly Guid FundUkBondId = Guid.Parse("99999999-9999-9999-9999-999999999902");
 
-    // Static constructor — valid place for statements at type scope
-    static DbInitializer()
-    {
-        System.Console.WriteLine(FundGlobalEquityId);
-        System.Console.WriteLine(FundUkBondId);
-    }
 
     // Pre-seeded Adviser & Customer IDs for Postman testing
-    public static readonly Guid SampleAdviserId = Guid.Parse("11111111-1111-1111-1111-111111111111"); // Sarah the Adviser
-    public static readonly Guid SampleCustomerId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"); // Alice the Customer
+    public static readonly Guid SampleAdviserId = Guid.Parse("11111111-1111-1111-1111-111111111111"); 
+    public static readonly Guid SampleCustomerId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"); 
 
     public static async Task SeedAsync(KelvinvaleDbContext context)
     {

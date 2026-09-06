@@ -37,7 +37,7 @@ public class HeaderAuthenticationHandler : AuthenticationHandler<HeaderAuthentic
 
         if (user == null)
         {
-            return AuthenticateResult.Fail("User not found in database.");
+            return AuthenticateResult.Fail("User not found.");
         }
 
         // 4. Build claims from database record

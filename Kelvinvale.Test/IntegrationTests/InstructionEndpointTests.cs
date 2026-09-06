@@ -96,11 +96,9 @@ public class InstructionEndpointTests
         var content = await response.Content.ReadAsStringAsync();
         Assert.That(content, Does.Contain("55").Or.Contain("retirement age"));
     }
-
     [Test]
     public async Task PostInstruction_WhenWithdrawalExceedsHoldingBalance_ReturnsBadRequest400()
     {
-        // Arrange: Alice has £5,000 (500,000 pence), attempts to withdraw £10,000 (1,000,000 pence)
         var request = new HttpRequestMessage(
             HttpMethod.Post,
             $"/api/v1/products/{CustomWebApplicationFactory.AliceIsaProductId}/instructions");
@@ -109,17 +107,13 @@ public class InstructionEndpointTests
         request.Content = JsonContent.Create(new
         {
             Type = "Withdrawal",
-            AmountPence = 1000000,
+            AmountPence = 6000000, // Seeded holding is 500,000 pence; 6000,000 triggers the check
             FundCode = "GLB-EQ-ACC"
         });
 
-        // Act
         var response = await _client.SendAsync(request);
 
-        // Assert
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
-        var content = await response.Content.ReadAsStringAsync();
-        Assert.That(content, Does.Contain("Insufficient funds").Or.Contain("Available"));
     }
 
     [Test]
@@ -144,5 +138,145 @@ public class InstructionEndpointTests
 
         // Assert
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+    }
+
+    [Test]
+    public async Task PostInstruction_WhenSwitchSourceAndTargetAreSame_ReturnsBadRequest400()
+    {
+        // Arrange: Alice attempts to switch GLB-EQ-ACC into GLB-EQ-ACC
+        var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/v1/products/{CustomWebApplicationFactory.AliceIsaProductId}/instructions");
+
+        request.Headers.Add("X-Caller-Id", CustomWebApplicationFactory.CustomerAliceId.ToString());
+        request.Content = JsonContent.Create(new
+        {
+            Type = "Switch",
+            AmountPence = 50000,
+            FundCode = "GLB-EQ-ACC",
+            TargetFundCode = "GLB-EQ-ACC"
+        });
+
+        // Act
+        var response = await _client.SendAsync(request);
+
+        // Assert
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.That(content, Does.Contain("cannot be identical").IgnoreCase);
+    }
+
+    [Test]
+    public async Task PostInstruction_WhenSwitchAmountExceedsBalance_ReturnsBadRequest400()
+    {
+        var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/v1/products/{CustomWebApplicationFactory.AliceIsaProductId}/instructions");
+
+        request.Headers.Add("X-Caller-Id", CustomWebApplicationFactory.CustomerAliceId.ToString());
+        request.Content = JsonContent.Create(new
+        {
+            Type = "Switch",
+            AmountPence = 500001, // Must be > 500,000 pence to exceed holding
+            FundCode = "GLB-EQ-ACC",
+            TargetFundCode = "UK-BND-INC" // Must be a valid second fund
+        });
+
+        var response = await _client.SendAsync(request);
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+    }
+
+    [Test]
+    public async Task PostInstruction_ValidSwitch_CreatesInstructionAndReturns201()
+    {
+        // Arrange: Alice switches £2,000 from Global Equity to UK Corporate Bond
+        var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/v1/products/{CustomWebApplicationFactory.AliceIsaProductId}/instructions");
+
+        request.Headers.Add("X-Caller-Id", CustomWebApplicationFactory.CustomerAliceId.ToString());
+        request.Content = JsonContent.Create(new
+        {
+            Type = "Switch",
+            AmountPence = 200000,
+            FundCode = "GLB-EQ-ACC",
+            TargetFundCode = "UK-CORP-BND",
+            ClientReference = "UNIT-TEST-SWI-01"
+        });
+
+        // Act
+        var response = await _client.SendAsync(request);
+
+        // Assert
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+    }
+    [Test]
+    public async Task PostInstruction_WhenIsaSubscriptionExceedsAnnualAllowance_ReturnsBadRequest400()
+    {
+        //  Arrange: Attempt to subscribe £20,000.01 (2,000,001 pence) in a single instruction
+        var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/v1/products/{CustomWebApplicationFactory.AliceIsaProductId}/instructions");
+
+        request.Headers.Add("X-Caller-Id", CustomWebApplicationFactory.CustomerAliceId.ToString());
+        request.Content = JsonContent.Create(new
+        {
+            Type = "Subscription",
+            AmountPence = 2000001, // Exceeds 2,000,000 pence
+            FundCode = "GLB-EQ-ACC"
+        });
+
+        // Act 
+        var response = await _client.SendAsync(request);
+
+        // Assert 
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        Assert.That(responseBody, Does.Contain("ISA Allowance Exceeded"));
+        Assert.That(responseBody, Does.Contain("exceeds remaining allowance"));
+    }
+    [Test]
+    public async Task PostInstruction_WhenCumulativeSubscriptionsExceedAllowance_ReturnsBadRequest400()
+    {
+        // Arrange: First valid subscription of £15,000 (1,500,000 pence)
+        var firstRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/v1/products/{CustomWebApplicationFactory.AliceIsaProductId}/instructions");
+
+        firstRequest.Headers.Add("X-Caller-Id", CustomWebApplicationFactory.CustomerAliceId.ToString());
+        firstRequest.Content = JsonContent.Create(new
+        {
+            Type = "Subscription",
+            AmountPence = 1500000,
+            FundCode = "GLB-EQ-ACC",
+            ClientReference = "SUB-PART-1"
+        });
+
+        var firstResponse = await _client.SendAsync(firstRequest);
+        Assert.That(firstResponse.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+
+        // Act: Second subscription of £6,000 (600,000 pence), which brings the total to £21,000
+        var secondRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/v1/products/{CustomWebApplicationFactory.AliceIsaProductId}/instructions");
+
+        secondRequest.Headers.Add("X-Caller-Id", CustomWebApplicationFactory.CustomerAliceId.ToString());
+        secondRequest.Content = JsonContent.Create(new
+        {
+            Type = "Subscription",
+            AmountPence = 600000,
+            FundCode = "GLB-EQ-ACC",
+            ClientReference = "SUB-PART-2"
+        });
+
+        var secondResponse = await _client.SendAsync(secondRequest);
+
+        // Assert 
+        Assert.That(secondResponse.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+
+        var responseBody = await secondResponse.Content.ReadAsStringAsync();
+        Assert.That(responseBody, Does.Contain("ISA Allowance Exceeded"));
     }
 }

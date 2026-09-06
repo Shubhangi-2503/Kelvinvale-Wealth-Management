@@ -17,15 +17,13 @@ namespace Kelvinvale.Application.Rules.Product
 
         public async Task<RuleValidationResult> ValidateAsync(
             User customer,
-            int taxYear,
-            CancellationToken cancellationToken = default)
+            int taxYear)
         {
             // 1. Fetch data through repository abstraction
             var hasExistingIsa = await _productRepo.HasActiveProductOfTypeInTaxYearAsync(
                 customer.Id,
                 ProductTypeCode,
-                taxYear,
-                cancellationToken);
+                taxYear);
 
             // 2. Evaluate business logic
             if (hasExistingIsa)
