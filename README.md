@@ -21,7 +21,7 @@ Clone or download this repository to your local machine:
 ### Run with .NET CLI
 
 1. **Configure Local Environment**  
-   Verify or update `src/Kelvinvale.Api/appsettings.Development.json` (see sample below).
+   Verify or update `Kelvinvale.Api/appsettings.Development.json` (see sample below).
 
 2. **Restore Dependencies**
    ```bash
@@ -36,12 +36,12 @@ Clone or download this repository to your local machine:
 
 4. **Apply Database Migrations**
    ```bash
-   dotnet ef database update --project src/Kelvinvale.Infrastructure --startup-project src/Kelvinvale.Api
+   dotnet ef database update --project Kelvinvale.Infrastructure --startup-project src/Kelvinvale.Api
    ```
 
 5. **Start API Server**
    ```bash
-   dotnet run --project src/Kelvinvale.Api/Kelvinvale.Api.csproj
+   dotnet run --project Kelvinvale.Api/Kelvinvale.Api.csproj
    ```
 
 ---
@@ -50,14 +50,14 @@ Clone or download this repository to your local machine:
 
 1. Install **Visual Studio 2026** (or VS Code with the **C# Dev Kit** extension).
 2. Open `Kelvinvale.sln`.
-3. Confirm that `src/Kelvinvale.Api/appsettings.Development.json` exists with your local DB connection string.
+3. Confirm that `Kelvinvale.Api/appsettings.Development.json` exists and contains your local DB connection string.
 4. Set `Kelvinvale.Api` as the **Startup Project**.
 5. Press <kbd>F5</kbd> (or select **Debug → Start Debugging**).
 
 
 ### Local Configuration Reference
 
-`src/Kelvinvale.Api/appsettings.Development.json`
+`Kelvinvale.Api/appsettings.json`
 ```json
 {
   "Logging": {
