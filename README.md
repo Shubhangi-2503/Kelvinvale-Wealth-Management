@@ -111,14 +111,6 @@ We implemented a dynamic, two-tier security pipeline combining database-backed *
   * *Roadmap:* Decouple relationship checks into a dedicated fine-grained authorisation engine (e.g., OpenFGA).
 * **Dynamic Adviser Book Scoping**: Evaluated `dbo.CustomerAdvisors` dynamically on every query because caching or claim-embedding client IDs causes stale access when books transfer.  
   * *Roadmap:* Retain dynamic database joins while optimising query performance using composite indexes.
-*  **Production Identity Transition**: Used a lightweight custom header handler to keep evaluation self-contained without external dependencies.  
-  * *Roadmap:* Migrate to a dedicated Duende IdentityServer supporting OAuth 2.0 with PKCE, RS256 JWTs, and OIDC discovery.
-
-### Production Roadmap & Enterprise Identity (IdP) 
-Because Kelvinvale operates in wealth management under FCA regulatory compliance, production perimeter security cannot rely on stubbed headers or public multitenant auth:
-1. **Custom Dedicated Identity Provider (IdP):** Deploy an isolated, self-hosted IdP service built with **Duende IdentityServer** on .NET 10. It will handle the OAuth 2.0 Authorisation Code Flow + PKCE, user authentication, and hardware-backed MFA (FIDO2/WebAuthn) off the core API request path.
-2. **Cryptographic JWT Validation:** The core API will replace header parsing with `Microsoft.AspNetCore.Authentication.JwtBearer`, validating token signatures against the IdP's `/.well-known/openid-configuration` and JWKS endpoints using HSM-managed RS256/ES256 asymmetric keys.
-
 ---
 
 ## 2(a). What to Tackle Next Given Another Day
@@ -133,7 +125,6 @@ Because Kelvinvale operates in wealth management under FCA regulatory compliance
 
 ## 2(b). Extended Roadmap (Given a Month)
 * **High-Throughput Stored Procedures**: Transition critical high-volume writes and complex reporting aggregates into compiled SQL Stored Procedures to bypass ORM mapping overhead, achieving maximum execution performance for heavy data operations while preserving a clean, unified data access layer in C#.
-* **Dedicated Self-Hosted Identity Provider**: Replace custom header-based identity simulation with an isolated Duende IdentityServer on .NET, implementing OAuth 2.0 PKCE, WebAuthn MFA, and RS256-signed JWTs.
 * **Asynchronous Event-Driven Notifications**: Decouple client communications (confirmations, allowance alerts) from the synchronous HTTP request path using Azure Service Bus and Logic Apps to reduce user-facing latency.
 * **Payment Gateway & Open Banking Integration**: Implement Open Banking Payment Initiation Services (PIS) with HMAC-SHA256-verified webhooks to enable real-time account funding and instant settlement transitions.
 * **Power BI Investment Intelligence**: Expose an aggregate read-only data model to Microsoft Power BI via DirectQuery to provide clients and advisers with predictive compounding projections and tax-relief forecasting.
@@ -191,7 +182,7 @@ In line with professional delivery standards, AI tools were leveraged as force m
 * **Financial Precision**: Overrode suggested decimal/floating-point types in favour of discrete integer pence (`long AmountPence`) to eliminate rounding drift per UK accounting practices.
 * **Test Architecture**: Discarded shallow `Moq` unit test setups in favour of EF Core in-memory providers to test genuine LINQ execution and ReBAC filters.
 * **Context Drops & Omissions**: Corrected instances where AI lost conversational context, omitted specified edge-case scenarios, or lost track of pre-existing code.
-* **Code Hygiene**: Audited and removed generated dead code, redundant variables, and unsolicited comments.
+* **Code Hygiene**: Generated dead code, redundant variables, and unsolicited comments.
 
 ### Verification & Ownership
 Every line of code and test assertion was manually reviewed, compiled under a strict zero-warning policy (`/warnaserror`), and validated against an 85%+ branch coverage gate to ensure domain correctness and FCA compliance.
