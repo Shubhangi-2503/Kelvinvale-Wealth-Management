@@ -135,7 +135,6 @@ We implemented a dynamic, two-tier security pipeline combining database-backed *
 ### Azure Cloud Infrastructure
 
 *  **Azure App Service**: Hosts the Web API with deployment slots to enable zero-downtime blue/green deployments.
-*  **Azure SQL Database**: Provides zone-redundant transactional storage to survive physical data center disruptions.
 *  **Azure Key Vault**: Stores connection strings and credentials securely, avoiding plaintext secrets in source control.
 *  **Azure Application Insights**: Collects distributed traces, SQL execution metrics, and structured telemetry.
 *  **Azure Front Door / APIM**: Serves as the perimeter reverse proxy, providing Web Application Firewall (WAF) filtering and rate limiting.
