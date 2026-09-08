@@ -145,7 +145,6 @@ We implemented a dynamic, two-tier security pipeline combining database-backed *
 
 * **Dedicated Environments (DEV, QA, UAT, PROD)**: Deploys separate infrastructure and database instances per tier to prevent test data from contaminating production records.
 * **Passwordless Managed Identity**: Uses Azure System-Assigned Managed Identity to pull configuration at runtime without storing passwords in `appsettings.json`.
-* **Read-Replica Analytics**: Connects reporting tools like Power BI directly to read replicas, protecting primary write performance.
 
 ---
 
@@ -179,7 +178,6 @@ In line with professional delivery standards, AI tools were leveraged as force m
 ### Engineering Overrides, Corrections & Friction Points
 * **Security Enforcement**: Rejected AI-proposed client headers (`X-Caller-Role`); replaced with server-side database role resolution from `X-Caller-Id` to prevent privilege escalation.
 * **Financial Precision**: Overrode suggested decimal/floating-point types in favour of discrete integer pence (`long AmountPence`) to eliminate rounding drift per UK accounting practices.
-* **Test Architecture**: Discarded shallow `Moq` unit test setups in favour of EF Core in-memory providers to test genuine LINQ execution and ReBAC filters.
 * **Context Drops & Omissions**: Corrected instances where AI lost conversational context, omitted specified edge-case scenarios, or lost track of pre-existing code.
 * **Code Hygiene**: Generated dead code, redundant variables, and unsolicited comments.
 
