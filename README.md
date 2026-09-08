@@ -116,7 +116,6 @@ We implemented a dynamic, two-tier security pipeline combining database-backed *
 ## 2(a). What to Tackle Next Given Another Day
 
 * **Global Exception Handler**: Implement a centralised custom exception middleware to intercept unhandled domain and validation errors, ensuring uniform RFC 7807 ProblemDetails responses without leaking internal stack traces.
-* **FluentValidation Pipeline**: Integrate a FluentValidation pipeline behaviour to execute input validation before controller execution, keeping endpoints lean and guaranteeing only valid payloads reach business logic.
 *  **Pagination on Customer Retrieval**: Introduce cursor- or offset-based pagination on `GET /customers` to restrict unbounded query result sets and protect memory usage as the user base expands.
 *  **EF Core Global Query Filters**: Configure global query filters on all soft-deletable entities (`WHERE IsActive = 1`) to eliminate repetitive manual filters and prevent accidental exposure of deactivated records.
 *  **Application Insights Telemetry**: Add Azure Application Insights with structured telemetry to correlate distributed traces, monitor SQL execution times, and quickly diagnose production failures.
